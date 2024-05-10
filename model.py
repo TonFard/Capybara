@@ -19,15 +19,12 @@ class ModelConfig:
     device: str = field(default=None)  # Device to run the model on (optional)
 
 
-class MultiHeadLatentAttention():
-    raise NotImplementedError("Reference DeepSeedv2 MLA")
-
-class CapybaraRMSNorm():
-    def __init__(self, hidden_size, eps=1e-6):
+class CapybaraRMSNorm(nn.Module):
+    def __init__(self, hidden_size: int, eps: float=1e-6):
         """
         CapybaraRMSNorm
         """
-        super().__init__()
+        super(CapybaraRMSNorm, self).__init__()
         self.weight = nn.Parameter(torch.ones(hidden_size))
         self.variance_epsilon = eps
 
@@ -37,25 +34,58 @@ class CapybaraRMSNorm():
         variance = hidden_states.pow(2).mean(-1, keepdim=True)
         hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
         return self.weight * hidden_states.to(input_dtype)
-    
 
 
-    raise NotImplementedError("Reference llama3")
-
-class RoPE():
+class CapybaraRotaryEmbedding():
     raise NotImplementedError("Reference DeepSeedv2")
+
+
+class CapybaraAttention(nn.Module):
+    def __init__(self, ):
+        super(CapybaraAttention, self).__init__()
+
+
+class CapybaraMLP(nn.Module):
+    def __init__(
+        self,
+        hidden_size: int,
+        intermediate_size: int = None,
+        bias: bool = False,
+        drop_prob: float = 0.0
+    ):
+        """
+        CapybaraMLP reference nanoGPT MLP and DeepSeekv2 MLP
+        """
+        super(CapybaraMLP, self).__init__()
+        if intermediate_size is None:
+            intermediate_size = (int(hidden_size * 8/3 / 128) + 1) * 128
+        self.in_proj = nn.Linear(hidden_size, intermediate_size, bias=bias)
+        self.act = nn.GELU()
+        self.out_proj = nn.Linear(intermediate_size, hidden_size, bias=bias)
+        self.dropout = nn.Dropout(drop_prob)
+
+    def forward(self, x):
+        x = self.in_proj(x)
+        x = self.act(x)
+        x = self.out_proj(x)
+        x = self.dropout(x)
+        return x
+
+
+class CapybaraDecoderLayer(nn.Module):
+    def __init__(self, hidden_size: int, num_hidden_layers: int, ):
+        super(CapybaraDecoderLayer, self).__init__()
+        self.norm1 = CapybaraRMSNorm(hidden_size)
+        self.attn = CapybaraAttention()
+        self.norm2 = CapybaraRMSNorm(hidden_size)
+        self.mlp = CapybaraMLP(hidden_size)
+    
+    def forward(self, x):
+        pass
 
 class Capybara(nn.Module):
     def __init__(self, ):
         raise NotImplementecdError("It hasn't been implemented yet")
-
-class CapybaraDecoderLayer():
-    raise NotImplementedError("It hasn't been implemented yet")
- 
-class CapybaraMLP():
-    raise NotImplementedError("It hasn't been implemented yet")
-
-
 
 
 model = MultiHeadLatentAttention()
