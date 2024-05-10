@@ -41,8 +41,40 @@ class CapybaraRotaryEmbedding():
 
 
 class CapybaraAttention(nn.Module):
-    def __init__(self, ):
+    def __init__(
+        self, 
+        hidden_size: int,
+        num_attention_heads: int,
+        attention_dropout: float = 0.0,
+        bias: bool = False
+    ):
         super(CapybaraAttention, self).__init__()
+        self.hidden_size = hidden_size
+        self.num_heads = num_attention_heads
+        self.attention_dropout = attention_dropout
+
+        self.wqkv = nn.Linear(hidden_size, 3 * hidden_size, bias=bias)
+        self.proj = nn.Linear(hidden_size, hidden_size, bias=bias)
+        self.attn_dropout = nn.Dropout(attention_dropout)
+        self.q_head_dim = self.hidden_size // self.num_heads
+
+        self.proj_dropout = nn.Dropout(attention_dropout)
+        self.softmax_scale = self.q_head_dim ** -0.5
+
+    def forward(self, x: torch.Tensor):
+        bsz, seq_len, hidden_size = x.size()  # [batch_size, sequence_length, embedding dimension]
+        q, k, v = self.wqkv(x).split(self.hidden_size, dim=2)
+        q = q.view(bsz, seq_len, self.num_heads, self.q_head_dim).transpose(1, 2)  # [bsz, nh, seq_len, hs]
+        k = k.view(bsz, seq_len, self.num_heads, self.q_head_dim).transpose(1, 2)  # [bsz, nh, seq_len, hs]
+        v = v.view(bsz, seq_len, self.num_heads, self.q_head_dim).transpose(1, 2)  # [bsz, nh, seq_len, hs]
+
+        attn_weights = torch.matmul(q, k.transpose(-2, -1)) * self.softmax_scale
+        attn_weights = F.softmax(attn_weights, dim=-1)
+        attn_weights = self.attn_dropout(attn_weights)
+        attn_output = torch.matmul(attn_weights, v)
+        attn_output = attn_output.transpose(1, 2).contiguous().view(bsz, seq_len, hidden_size)
+        attn_output = self.proj_dropout(self.proj(attn_output))
+        return attn_output
 
 
 class CapybaraMLP(nn.Module):
@@ -64,7 +96,7 @@ class CapybaraMLP(nn.Module):
         self.out_proj = nn.Linear(intermediate_size, hidden_size, bias=bias)
         self.dropout = nn.Dropout(drop_prob)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor):
         x = self.in_proj(x)
         x = self.act(x)
         x = self.out_proj(x)
@@ -80,7 +112,7 @@ class CapybaraDecoderLayer(nn.Module):
         self.norm2 = CapybaraRMSNorm(hidden_size)
         self.mlp = CapybaraMLP(hidden_size)
     
-    def forward(self, x):
+    def forward(self, x: torch.Tensor):
         pass
 
 class Capybara(nn.Module):
