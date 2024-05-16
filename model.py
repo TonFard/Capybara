@@ -17,7 +17,7 @@ class ModelConfig:
     mlp_dropout: float = field(default=0.0)
     bias: bool = field(default=False)
 
-    vocab_size: int = field(default=50257)  # Vocabulary size
+    vocab_size: int = field(default=16666)  # Vocabulary size
     block_size: int = field(default=1024)
     norm_eps: float = field(default=1e-6)  # Epsilon value for normalization
     max_batch_size: int = field(default=32)  # Maximum batch size for training
@@ -139,6 +139,10 @@ class Capybara(nn.Module):
         super(Capybara, self).__init__()
         self.config = config
 
+        self.wte = nn.Embedding(config.vocab_size, config.hidden_size)
+        self.pte = nn.Embedding(config.block_size, config.hidden_size)
+        self.dropout = nn.Dropout(config.mlp_dropout)
+
         self.layers = nn.ModuleList(
             [
                 CapybaraDecoderLayer(
@@ -153,12 +157,53 @@ class Capybara(nn.Module):
                 for _ in range(config.num_hidden_layers)
             ]
         )
-    
-    def forward(self, x):
+        self.norm = CapybaraRMSNorm(config.hidden_size)
+        self.fc = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+
+    def forward(self, idx, target=None):
+        device = idx.device
+        b, t = idx.size()
+
+        pos = torch.arange(0, t, dtype=torch.long, device=device)
+
+        tok_emb = self.wte(idx)
+        pos_emb = self.pte(pos)
+        x = self.dropout(tok_emb + pos_emb)
+
         for layer in self.layers:
             x = layer(x)
+        x = self.norm(x)
+
+        if target is not None:
+            logits = self.fc(x)
+            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), target.view(-1), ignore_index=-1)
+        else:
+            logits = self.fc(x[:, [-1], :])
+            loss = None
         return x
+
+    def crop_block_size(self, block_size):
+        assert block_size <= self.config.block_size
+        self.config.blcok_size = block_size
+        self.wpe.weight = nn.Parameter(self.wpe.weight[:block_size])
+        for block in self.layers:
+            if hasattr(block.attn, "bias"):
+                block.attn.bias = block.attn.bias[:, :, :block_size, :block_size]
     
+
+# 打印模型的每一层及其参数大小
+def print_model_parameters(model):
+    print("Layer Name & Parameters")
+    print("----------------------------")
+    total_params = 0
+    for name, parameter in model.named_parameters():
+        param_size = parameter.size()
+        param_count = torch.prod(torch.tensor(param_size)).item()
+        total_params += param_count
+        print(f"{name:50} | Size: {str(param_size):30} | Count: {str(param_count):20}")
+    print("----------------------------")
+    print(f"Total Parameters: {total_params} ({total_params / 1000000:.1f} M)")
+
 
 if __name__ == "__main__":
     config = ModelConfig()
@@ -167,5 +212,7 @@ if __name__ == "__main__":
     hidden_size = config.hidden_size
     input_tensor = torch.rand(batch_size, seq_length, hidden_size)
     model = Capybara(config)
-    print(model(input_tensor).shape)
+    print_model_parameters(model)
+
+    # print(model(input_tensor).shape)
 
