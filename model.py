@@ -173,14 +173,14 @@ class Capybara(nn.Module):
         for layer in self.layers:
             x = layer(x)
         x = self.norm(x)
-
+        
         if target is not None:
             logits = self.fc(x)
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), target.view(-1), ignore_index=-1)
         else:
             logits = self.fc(x[:, [-1], :])
             loss = None
-        return x
+        return logits, loss
 
     def crop_block_size(self, block_size):
         assert block_size <= self.config.block_size
@@ -190,6 +190,25 @@ class Capybara(nn.Module):
             if hasattr(block.attn, "bias"):
                 block.attn.bias = block.attn.bias[:, :, :block_size, :block_size]
     
+    @torch.no_grad()
+    def generate(self, idx, max_new_token, temperature=1.0, top_k=None):
+        for _ in range(max_new_token):
+            idx_cond = idx if idx.size(1) <= self.config.block_size else idx[:, -self.config.block_size]
+            logits, _ = self(idx_cond)
+            logits = logits[:, -1, :] / temperature
+
+            if top_k is not None:
+                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                logits[logits < v[:, [-1]]] = -float("Inf")
+
+            probs = F.softmax(logits, dim=-1)
+            idx_next = torch.multinomial(probs, num_samples=1)
+            idx = torch.cat((idx, idx_next), dim=1)
+        return idx
+    
+
+
+
 
 # 打印模型的每一层及其参数大小
 def print_model_parameters(model):
